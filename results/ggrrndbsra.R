@@ -96,7 +96,7 @@ both_acc_and_tax$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", both_acc_and_tax$gs)
 # add column for n at a given genus and species
 both_acc_and_tax <- both_acc_and_tax %>%
   group_by(gs)%>%
-  mutate(n_gs = n()) %>%
+  mutate(gg_n_gs = n()) %>%
   as.data.frame()
 
 #####  filter out those lacking species and genus
@@ -106,11 +106,13 @@ both_acc_and_tax_filtered <- both_acc_and_tax %>%
   as.data.frame()
 
 
-ggplot(both_acc_and_tax_filtered, aes(x=n_gs)) + geom_histogram(bins = 100)
-ggplot(both_acc_and_tax_filtered, aes(y=n_gs)) + geom_boxplot() +geom_point(aes(x=0))
-ggplot(both_acc_and_tax_filtered, aes(y=n_gs)) + geom_violin(aes(x=0))
+ggplot(both_acc_and_tax_filtered, aes(x=gg_n_gs)) + geom_histogram(bins = 100)
+ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_boxplot() +geom_point(aes(x=0))
+ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_violin(aes(x=0))
 
 head(both_acc_and_tax_filtered$gs)
+
+
 #rrnDB_tidy.R was moved here
 rawrrndb <- read.csv("~/Desktop/16scandidate/rrnDB/rrnDB-5.5.tsv", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 str(rawrrndb)
@@ -146,27 +148,34 @@ srahits <- srahits %>%
   as.data.frame()
 
 # Add in extra column for n at a given genus and species
-rawsrahits <- rawsrahits %>%
+srahits <- srahits %>%
     group_by(gs) %>%
-      mutate(n_gs = n()) %>%
+      mutate(sra_n_gs = n()) %>%
         as.data.frame()
   
 
 
 sra_rrndb_gg_merge <- merge(rrndb_gg_merge, srahits[!duplicated(srahits$gs),], by = "gs")
 
+#####To compare n for given species on sra and gg
+sra_gg_ngsmerge <- inner_join(rawsrahits[!duplicated(rawsrahits$gs),], 
+                               both_acc_and_tax[!duplicated(both_acc_and_tax$gs),],
+                                  by="gs")
 
-tmp <- sra_rrndb_gg_merge %>%
+srarrndbgg16 <- sra_rrndb_gg_merge %>%
   filter(7 >= X16S.gene.count) %>%
   filter(4 <= X16S.gene.count) %>%
          as.data.frame()
   
-###### Calculating the percentile of the n_gs in sra_rrndb_gg_merge
-quantile(sra_rrndb_gg_merge$n_gs.y, probs = c(.1 ,.2, .3, .4, .5, .6, .7, .8 ,.9, 1))
-quantile(sra_rrndb_gg_merge$n_gs.x, probs = c(.1 ,.2, .3, .4, .5, .6, .7, .8 ,.9, 1))
+###### Add column for the percentile of sra_n_gs and gg_n_gs in sra_gg_merge
+quantile(srarrndbgg16$sra_n_gs,  probs = c(.1, .2, .3, .4, .5, .6, .7, .8, .9, 1))
+quantile(srarrndbgg16$gg_n_gs, probs = c(.1, .2, .3, .4, .5, .6, .7, .8, .9, 1))
 
+##### Add plot comparing the coverage for each species on gg and sra, using percentile above as the y axis.
+#x=gs
+#y=percentile of n_gs 
+#for each gs, n_gs for sra and gg. Bar plot/ line plot.
+ggplot(tmp, aes(x=gg_n_gs)) + geom_histogram(bins = 100)
+ggplot(tmp, aes(x=sra_n_gs)) + geom_histogram(bins = 100)
+ 
 
-
-
-#sra_rrndb_gg_merge$percentilegg <- quantile(sra_rrndb_gg_merge$n_gs.x)
-#sra_rrndb_gg_merge$percentilesra <- quantile(sra_rrndb_gg_merge$n_gs.y)
