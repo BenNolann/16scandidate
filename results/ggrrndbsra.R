@@ -167,15 +167,66 @@ srarrndbgg16 <- sra_rrndb_gg_merge %>%
   filter(4 <= X16S.gene.count) %>%
          as.data.frame()
   
-###### Add column for the percentile of sra_n_gs and gg_n_gs in sra_gg_merge
-quantile(srarrndbgg16$sra_n_gs,  probs = c(.1, .2, .3, .4, .5, .6, .7, .8, .9, 1))
-quantile(srarrndbgg16$gg_n_gs, probs = c(.1, .2, .3, .4, .5, .6, .7, .8, .9, 1))
+###### Add column for the percentile of sra_n_gs and gg_n_gs in sra_gg_merge.
+# perc_df_sra <- data.frame(value=quantile(srarrndbgg16$sra_n_gs,  probs = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)))
+# perc_df_gg <- data.frame(value=quantile(srarrndbgg16$gg_n_gs, probs = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)))
+perc_df_sra <- data.frame(value=quantile(srarrndbgg16$sra_n_gs,  probs = seq(0,1, .01)))
+perc_df_gg <- data.frame(value=quantile(srarrndbgg16$gg_n_gs, probs = seq(0,1, .01)))
+perc_df_sra$percentile <-rownames(perc_df_sra)
+perc_df_gg$percentile <-rownames(perc_df_gg)
+srarrndbgg16$perc_sra <- NA
+srarrndbgg16$perc_gg <- NA
+for (perc in 1:nrow(perc_df_sra)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(srarrndbgg16)){
+      if(
+          srarrndbgg16[r, "sra_n_gs"] >= perc_df_sra[perc-1, "value"] & 
+          srarrndbgg16[r, "sra_n_gs"] <= perc_df_sra[perc, "value"]
+          ){
+        
+          srarrndbgg16[r, "perc_sra"] <- perc_df_sra[perc-1, "percentile"]
+      }
+    }
+  }
+}
+
+# and greengenes
+for (perc in 1:nrow(perc_df_gg)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(srarrndbgg16)){
+      if(
+        srarrndbgg16[r, "gg_n_gs"] >= perc_df_gg[perc-1, "value"] & 
+        srarrndbgg16[r, "gg_n_gs"] <= perc_df_gg[perc, "value"]
+      ){
+        
+        srarrndbgg16[r, "perc_gg"] <- perc_df_gg[perc-1, "percentile"]
+      }
+    }
+  }
+}
+# convert percentile to integers
+srarrndbgg16$perc_gg <- as.numeric(gsub("%", "", srarrndbgg16$perc_gg))
+srarrndbgg16$perc_sra <- as.numeric(gsub("%", "", srarrndbgg16$perc_sra))
+# install.packages("ggrepel")
+library(ggrepel)
+library(ggplot2)
+ggplot(srarrndbgg16, aes(x=perc_sra, y=perc_gg, label=gs, colour=g)) + geom_point() + 
+      labs(x="sraFind Percentile",
+           y="Greengenes Percentile",
+          colour="Genus",
+           title="Count distribution of species",
+           subtitle="Comparing counts of species based on Greengenes and sraFind \n in order to find a candidate.") +
+        annotate("rect", xmin = 40, xmax = 60, ymin = 40, ymax = 60,
+                 alpha = .2) +
+          annotate("text", x = 60, y = 43, label = "Chosen candidate", colour = "red") +
+       geom_label_repel()
 
 ##### Add plot comparing the coverage for each species on gg and sra, using percentile above as the y axis.
-#x=gs
-#y=percentile of n_gs 
-#for each gs, n_gs for sra and gg. Bar plot/ line plot.
-ggplot(tmp, aes(x=gg_n_gs)) + geom_histogram(bins = 100)
-ggplot(tmp, aes(x=sra_n_gs)) + geom_histogram(bins = 100)
+ 
+
  
 
