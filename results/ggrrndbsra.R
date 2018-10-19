@@ -214,16 +214,47 @@ srarrndbgg16$perc_sra <- as.numeric(gsub("%", "", srarrndbgg16$perc_sra))
 # install.packages("ggrepel")
 library(ggrepel)
 library(ggplot2)
-ggplot(srarrndbgg16, aes(x=perc_sra, y=perc_gg, label=gs, colour=g)) + geom_point() + 
+srarrndbgg16$labelgs <- ifelse(srarrndbgg16$gs == "Pediococcus acidilactici", srarrndbgg16$gs, "")
+g <- ggplot(srarrndbgg16, aes(x=perc_sra, y=perc_gg, label=labelgs)) +
       labs(x="sraFind Percentile",
            y="Greengenes Percentile",
-          colour="Genus",
+           colour="Genus",
            title="Count distribution of species",
            subtitle="Comparing counts of species based on Greengenes and sraFind \n in order to find a candidate.") +
         annotate("rect", xmin = 40, xmax = 60, ymin = 40, ymax = 60,
-                 alpha = .2) +
-          annotate("text", x = 60, y = 43, label = "Chosen candidate", colour = "red") +
-       geom_label_repel()
+                 alpha = .2, ) 
+
+
+(glight <- g + 
+    geom_point() + 
+    theme(axis.line.x = element_line(colour="black", size=1),
+           axis.line.y = element_line(colour="black", size=1),
+           panel.background=element_rect(fill="transparent"),
+           panel.grid.minor = element_blank(),
+           panel.grid.major = element_blank()) +
+       geom_label_repel() )
+
+(gdark <- g + 
+    geom_point(color="white", size=2) + 
+    theme(text = element_text(colour = "white"),
+          rect = element_rect(fill = "transparent"),
+                    axis.text = element_text(colour = "white"),
+                    axis.ticks = element_line(colour = "white"),
+                    axis.line.x = element_line(colour="white", size=1),
+                    axis.line.y = element_line(colour="white", size=1),
+                    panel.background=element_rect(fill="transparent"),
+              plot.background = element_rect(fill = "transparent",colour = NA),
+          panel.grid.minor = element_blank(),
+                    panel.grid.major = element_blank()) +
+    scale_color_manual(values = c("white")) +
+  geom_label_repel(segment.colour = "white", color="white", fill="transparent") )
+
+# pdf(file = "./Desktop/tmp_dark.pdf", width = 7, height = 4, bg = "")
+# print(gdark)
+# dev.off()
+ggsave(glight, filename = "./Desktop/tmp_light.pdf",  bg = "transparent")
+ggsave(gdark, filename = "./Desktop/tmp_dark.png",  bg = "transparent",width = 7, height = 4.5)
+
 
 ##### Add plot comparing the coverage for each species on gg and sra, using percentile above as the y axis.
  
