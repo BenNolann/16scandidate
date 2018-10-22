@@ -93,6 +93,8 @@ colnames(both_acc_and_tax)
 
 both_acc_and_tax$gs <- paste(both_acc_and_tax$g, both_acc_and_tax$s, sep = " ") #combine g and s
 both_acc_and_tax$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", both_acc_and_tax$gs) # Optional strain
+ggped <- both_acc_and_tax[both_acc_and_tax$gs == "Pediococcus acidilactici", c("id", "accession")] #for use in a bash loop to subset the fasta file
+write.table(ggped, file = "~/Desktop/16scandidate/results/pedidacc", sep = "\t", col.names = FALSE, row.names = FALSE)
 # add column for n at a given genus and species
 both_acc_and_tax <- both_acc_and_tax %>%
   group_by(gs)%>%
@@ -222,7 +224,7 @@ g <- ggplot(srarrndbgg16, aes(x=perc_sra, y=perc_gg, label=labelgs)) +
            title="Count distribution of species",
            subtitle="Comparing counts of species based on Greengenes and sraFind \n in order to find a candidate.") +
         annotate("rect", xmin = 40, xmax = 60, ymin = 40, ymax = 60,
-                 alpha = .2, ) 
+                 alpha = .2) 
 
 
 (glight <- g + 
@@ -237,7 +239,7 @@ g <- ggplot(srarrndbgg16, aes(x=perc_sra, y=perc_gg, label=labelgs)) +
 (gdark <- g + 
     geom_point(color="white", size=2) + 
     theme(text = element_text(colour = "white"),
-          rect = element_rect(fill = "transparent"),
+          rect = element_rect(fill = ""),
                     axis.text = element_text(colour = "white"),
                     axis.ticks = element_line(colour = "white"),
                     axis.line.x = element_line(colour="white", size=1),
@@ -259,5 +261,4 @@ ggsave(gdark, filename = "./Desktop/tmp_dark.png",  bg = "transparent",width = 7
 ##### Add plot comparing the coverage for each species on gg and sra, using percentile above as the y axis.
  
 
- 
 
