@@ -6,6 +6,7 @@ library(dplyr)
 library(stringr)
 library(ggplot2)
 
+# Read in greengenes taxa.
 rawtax <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_taxonomy.txt", sep=";", stringsAsFactors = FALSE, header = FALSE)
 # split fist column  so that id is everything before tab and k is everything after
 rawtax$id<- gsub("(\\d*)\\t(.*)", "\\1", rawtax$V1)
@@ -16,104 +17,49 @@ ordered_headers <- c("k", "p", "c", "o", "f", "g", "s", "id")
 colnames(rawtax) <- headers
 tax <- rawtax[, ordered_headers]
 
-#rawtax <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_taxonomy.txt", sep=";", stringsAsFactors = FALSE, header = FALSE)
-#tax <- head(rawtax, 2000)
-
-head(rawtax)
-
-
+# replace underscores in rows with no space.
 for (column in ordered_headers){
  tax[, column]<- gsub(" .__", "",tax[, column])
 }
 tax$id <- as.numeric(tax$id)
 
-# #########  exploring the data
-# #results_df <- starting_dataframe %>% DO_SOME_STUFF()
-# lok <- tax %>% 
-#   filter(str_detect(g, "Loktanella")) 
-# 
-# counts <- tax %>%
-#   group_by(k, p, c, o, f,  g, s) %>%
-#   mutate(n=n()) %>%
-#   distinct( k, p, n, c, o, f,  g, s)%>%
-#   as.data.frame()
-# 
-# #counts <- counts[!duplicated(counts),]
-# counts$name <- paste(counts$k, counts$p, counts$c, counts$o, counts$f, counts$g, counts$s)
-# 
-#  tmp <-tax %>%
-#   filter(s!="") %>%
-#    filter( g!="") %>%
-#   group_by(k, p, c, o, f,  g, s) %>%
-#   mutate(n=n()) %>%
-#   unite(name, k,p,c,o,f,g,s,n, remove = F) %>%
-#    distinct( name, n)%>%
-#    as.data.frame() 
-# ggplot(tmp, aes(x=reorder(s, -n), y=n, fill=k)) + geom_bar(stat="identity", color="black") +
-#     scale_y_continuous() + facet_grid(~k, scales = "free") +
-#     theme(
-#       axis.text.x = element_text(angle=45, hjust = 1)
-#   )
-# 
-# 
-# counts[counts$n == max(counts$n), ]
-# counts %>%
-#   group_by(k)%>%
-#   filter(s!="") %>%
-#   filter(n==max(n))
-# 
-# counts %>%
-#   filter(p=="") %>%
-#   filter(n==max(n))
-# 
-# 
-# table(counts$k)
-# #tax[tax$id==228054 & , "k"]
-# 
-
-#gsub("\t"," ", tax)
-
-
+# read in accessions from gg 
 rawacc <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_accessions.txt", sep ="\t", stringsAsFactors = FALSE, header = TRUE)
 str(rawacc)
 table(rawacc$accession_type)
 
 # check all tax ids in accessions
-table(
-  tax$id %in% rawacc$X.gg_id
-)
-# find which line taxid 4 is
-# grep("^755605$", rawacc$X.gg_id)
+table(tax$id %in% rawacc$X.gg_id)
 
-
-#  merging data
-#a <- head(tax, 1999)
-#b <- head(rawacc, 1999)
-#colnames(a)
-#colnames(b)
+# merge taxa and accessions by id.
 both_acc_and_tax <- merge(tax, rawacc, by.x = "id", by.y = "X.gg_id")
 colnames(both_acc_and_tax)
 
-both_acc_and_tax$gs <- paste(both_acc_and_tax$g, both_acc_and_tax$s, sep = " ") #combine g and s
-both_acc_and_tax$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", both_acc_and_tax$gs) # Optional strain
-ggped <- both_acc_and_tax[both_acc_and_tax$gs == "Pediococcus acidilactici", c("id", "accession")] #for use in a bash loop to subset the fasta file
+#combine g and s
+both_acc_and_tax$gs <- paste(both_acc_and_tax$g, both_acc_and_tax$s, sep = " ") 
+# Optional strain
+both_acc_and_tax$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", both_acc_and_tax$gs) 
+#for use in a bash loop to subset the fasta file
+ggped <- both_acc_and_tax[both_acc_and_tax$gs == "Pediococcus acidilactici", c("id", "accession")] 
+
 write.table(ggped, file = "~/Desktop/16scandidate/results/pedidacc", sep = "\t", col.names = FALSE, row.names = FALSE)
+
 # add column for n at a given genus and species
 both_acc_and_tax <- both_acc_and_tax %>%
   group_by(gs)%>%
   mutate(gg_n_gs = n()) %>%
   as.data.frame()
 
-#####  filter out those lacking species and genus
+#  filter out those lacking species and genus
 both_acc_and_tax_filtered <- both_acc_and_tax %>%
   filter(g != "") %>%
   filter(s != "") %>%
   as.data.frame()
 
 
-ggplot(both_acc_and_tax_filtered, aes(x=gg_n_gs)) + geom_histogram(bins = 100)
-ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_boxplot() +geom_point(aes(x=0))
-ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_violin(aes(x=0))
+#ggplot(both_acc_and_tax_filtered, aes(x=gg_n_gs)) + geom_histogram(bins = 100)
+#ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_boxplot() +geom_point(aes(x=0))
+#ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_violin(aes(x=0))
 
 head(both_acc_and_tax_filtered$gs)
 
@@ -126,12 +72,12 @@ colnames(both_acc_and_tax_filtered)
 rownames(rawrrndb)
 
 
-
 #   genus  species [optional strain]
 # "(\\S+)\\s(\\S+).*"
 rawrrndb$genus <- gsub("(\\S+)\\s(\\S+).*", "\\1", rawrrndb$`NCBI.scientific.name`)
 rawrrndb$species <- gsub("(\\S+)\\s(\\S+).*", "\\2", rawrrndb$`NCBI.scientific.name`)
 rawrrndb$gs <- paste(rawrrndb$genus, rawrrndb$species)
+
 # Get mean and sddev for rRNA counts at the genus level
 rawrrndb <- rawrrndb %>%
   group_by(genus) %>%
@@ -154,8 +100,7 @@ rrndb_gg_merge <- inner_join(
   rawrrndb_unique,
  by=c("g" = "genus"))
 
-#srahits_tidy.R
-
+# Read in sraFind file
 rawsrahits <- read.csv("~/Desktop/16scandidate/srafind/sraFind-Contig-biosample-with-SRA-hits.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
 
@@ -177,15 +122,15 @@ srahits <- srahits %>%
 
 srahits_unique_at_gs <- srahits[!duplicated(srahits$gs), ]
 #unique(srahits$gs)
+
+#To compare n for given species on sra and gg
 sra_rrndb_gg_merge <- inner_join(
   rrndb_gg_merge, 
   srahits_unique_at_gs, by = "gs")
 table(rrndb_gg_merge$gs %in% srahits_unique_at_gs$gs)
-#####To compare n for given species on sra and gg
-# sra_gg_ngsmerge <- inner_join(rawsrahits[!duplicated(rawsrahits$gs),], 
-#                                both_acc_and_tax[!duplicated(both_acc_and_tax$gs),],
-#                                   by="gs")
 
+
+# Sorting by mean 16S gene counts
 srarrndbgg16 <- sra_rrndb_gg_merge %>%
   filter(7 >= mean16s) %>%
   filter(3 <= mean16s) %>%
@@ -193,18 +138,17 @@ srarrndbgg16 <- sra_rrndb_gg_merge %>%
   as.data.frame()
   
 # select rows of interest for plotting, etc
-srarrndbgg16_unique <- srarrndbgg16[, c("k", "p",  "c", "o",        "f" ,       "g"  ,      "s" , "gs","gg_n_gs", "sra_n_gs", "platform" ) ]
+srarrndbgg16_unique <- srarrndbgg16[, c("k", "p", "c", "o", "f" , "g", "s", "gs", "gg_n_gs", "sra_n_gs", "platform" ) ]
 srarrndbgg16_unique <- srarrndbgg16_unique[!duplicated(srarrndbgg16_unique$gs),]
 
-###### Add column for the percentile of sra_n_gs and gg_n_gs in sra_gg_merge.
-# perc_df_sra <- data.frame(value=quantile(srarrndbgg16$sra_n_gs,  probs = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)))
-# perc_df_gg <- data.frame(value=quantile(srarrndbgg16$gg_n_gs, probs = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)))
+# Add column for the percentile of sra_n_gs and gg_n_gs in sra_gg_merge.
 perc_df_sra <- data.frame(value=quantile(unique(srarrndbgg16$sra_n_gs),  probs = seq(0,1, .01)))
 perc_df_gg <- data.frame(value=quantile(unique(srarrndbgg16$gg_n_gs), probs = seq(0,1, .01)))
 perc_df_sra$percentile <-rownames(perc_df_sra)
 perc_df_gg$percentile <-rownames(perc_df_gg)
 srarrndbgg16$perc_sra <- NA
 srarrndbgg16$perc_gg <- NA
+# for sra
 for (perc in 1:nrow(perc_df_sra)){
   if(perc == 1){
     next()
@@ -245,6 +189,7 @@ srarrndbgg16_unique$perc_sra <- as.numeric(gsub("%", "", srarrndbgg16_unique$per
 # install.packages("ggrepel")
 library(ggrepel)
 library(ggplot2)
+# For the label on the plot
 srarrndbgg16_unique$labelgs <- ifelse(srarrndbgg16_unique$gs == "Pediococcus acidilactici", srarrndbgg16_unique$gs, "")
 g <- ggplot(srarrndbgg16_unique, aes(x=sra_n_gs, y=perc_gg, label=labelgs)) +
  # g <- ggplot(srarrndbgg16_unique, aes(x=sra_n_gs, y=gg_n_gs, label=labelgs)) +
@@ -289,8 +234,6 @@ g <- ggplot(srarrndbgg16_unique, aes(x=sra_n_gs, y=perc_gg, label=labelgs)) +
 ggsave(glight, filename = "./Desktop/tmp_light.pdf",  bg = "transparent")
 ggsave(gdark, filename = "./Desktop/tmp_dark.png",  bg = "transparent",width = 7, height = 4.5)
 
-
-##### Add plot comparing the coverage for each species on gg and sra, using percentile above as the y axis.
  
 
 
