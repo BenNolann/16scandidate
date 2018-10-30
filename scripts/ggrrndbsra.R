@@ -7,6 +7,7 @@ library(stringr)
 library(ggplot2)
 
 rawtax <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_taxonomy.txt", sep=";", stringsAsFactors = FALSE, header = FALSE)
+# split fist column  so that id is everything before tab and k is everything after
 rawtax$id<- gsub("(\\d*)\\t(.*)", "\\1", rawtax$V1)
 rawtax$k<-  gsub("(\\d*)\\t(.*)"," \\2", rawtax$V1)
 rawtax$V1 <- NULL
@@ -19,58 +20,60 @@ tax <- rawtax[, ordered_headers]
 #tax <- head(rawtax, 2000)
 
 head(rawtax)
-# split fist column  so that id is everything before tab and k is everything after
+
 
 for (column in ordered_headers){
  tax[, column]<- gsub(" .__", "",tax[, column])
 }
 tax$id <- as.numeric(tax$id)
 
-#########  exploring the data
-#results_df <- starting_dataframe %>% DO_SOME_STUFF()
-lok <- tax %>% 
-  filter(str_detect(g, "Loktanella")) 
-
-counts <- tax %>%
-  group_by(k, p, c, o, f,  g, s) %>%
-  mutate(n=n()) %>%
-  distinct( k, p, n, c, o, f,  g, s)%>%
-  as.data.frame()
-
-#counts <- counts[!duplicated(counts),]
-counts$name <- paste(counts$k, counts$p, counts$c, counts$o, counts$f, counts$g, counts$s)
-
- tmp <-tax %>%
-  filter(s!="") %>%
-   filter( g!="") %>%
-  group_by(k, p, c, o, f,  g, s) %>%
-  mutate(n=n()) %>%
-  unite(name, k,p,c,o,f,g,s,n, remove = F) %>%
-   distinct( name, n)%>%
-   as.data.frame() 
-ggplot(tmp, aes(x=reorder(s, -n), y=n, fill=k)) + geom_bar(stat="identity", color="black") +
-    scale_y_continuous() + facet_grid(~k, scales = "free") +
-    theme(
-      axis.text.x = element_text(angle=45, hjust = 1)
-  )
-
-
-counts[counts$n == max(counts$n), ]
-counts %>%
-  group_by(k)%>%
-  filter(s!="") %>%
-  filter(n==max(n))
-
-counts %>%
-  filter(p=="") %>%
-  filter(n==max(n))
-
-
-table(counts$k)
-#tax[tax$id==228054 & , "k"]
-
+# #########  exploring the data
+# #results_df <- starting_dataframe %>% DO_SOME_STUFF()
+# lok <- tax %>% 
+#   filter(str_detect(g, "Loktanella")) 
+# 
+# counts <- tax %>%
+#   group_by(k, p, c, o, f,  g, s) %>%
+#   mutate(n=n()) %>%
+#   distinct( k, p, n, c, o, f,  g, s)%>%
+#   as.data.frame()
+# 
+# #counts <- counts[!duplicated(counts),]
+# counts$name <- paste(counts$k, counts$p, counts$c, counts$o, counts$f, counts$g, counts$s)
+# 
+#  tmp <-tax %>%
+#   filter(s!="") %>%
+#    filter( g!="") %>%
+#   group_by(k, p, c, o, f,  g, s) %>%
+#   mutate(n=n()) %>%
+#   unite(name, k,p,c,o,f,g,s,n, remove = F) %>%
+#    distinct( name, n)%>%
+#    as.data.frame() 
+# ggplot(tmp, aes(x=reorder(s, -n), y=n, fill=k)) + geom_bar(stat="identity", color="black") +
+#     scale_y_continuous() + facet_grid(~k, scales = "free") +
+#     theme(
+#       axis.text.x = element_text(angle=45, hjust = 1)
+#   )
+# 
+# 
+# counts[counts$n == max(counts$n), ]
+# counts %>%
+#   group_by(k)%>%
+#   filter(s!="") %>%
+#   filter(n==max(n))
+# 
+# counts %>%
+#   filter(p=="") %>%
+#   filter(n==max(n))
+# 
+# 
+# table(counts$k)
+# #tax[tax$id==228054 & , "k"]
+# 
 
 #gsub("\t"," ", tax)
+
+
 rawacc <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_accessions.txt", sep ="\t", stringsAsFactors = FALSE, header = TRUE)
 str(rawacc)
 table(rawacc$accession_type)
@@ -80,7 +83,7 @@ table(
   tax$id %in% rawacc$X.gg_id
 )
 # find which line taxid 4 is
-grep("^755605$", rawacc$X.gg_id)
+# grep("^755605$", rawacc$X.gg_id)
 
 
 #  merging data
@@ -126,16 +129,30 @@ rownames(rawrrndb)
 
 #   genus  species [optional strain]
 # "(\\S+)\\s(\\S+).*"
-rawrrndb$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$genus <- gsub("(\\S+)\\s(\\S+).*", "\\1", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$species <- gsub("(\\S+)\\s(\\S+).*", "\\2", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$gs <- paste(rawrrndb$genus, rawrrndb$species)
+# Get mean and sddev for rRNA counts at the genus level
+rawrrndb <- rawrrndb %>%
+  group_by(genus) %>%
+  mutate(mean16s=mean(X16S.gene.count, na.rm = T)) %>%
+  mutate(stddev16s=sd(X16S.gene.count, na.rm = T)) %>%
+  as.data.frame()
 
 
-table(rawrrndb$gs %in% both_acc_and_tax_filtered$gs)
+table(rawrrndb$genus %in% both_acc_and_tax_filtered$g)
+#table(rawrrndb$gs %in% both_acc_and_tax_filtered$gs)
+# rawrrndb$gs[!rawrrndb$gs %in% both_acc_and_tax_filtered$gs]
+# both_acc_and_tax_filtered$gs[!both_acc_and_tax_filtered$gs %in% rawrrndb$gs]
 table(both_acc_and_tax_filtered$gs %in% rawrrndb$gs)
 
-
-rrndb_gg_merge <- inner_join(rawrrndb[!duplicated(rawrrndb$gs), ],
-                              both_acc_and_tax_filtered[!duplicated(both_acc_and_tax_filtered$gs), ], 
-                              by = "gs" )
+rawrrndb_unique <- rawrrndb[, c("genus", "mean16s", "stddev16s") ]
+rawrrndb_unique <- rawrrndb_unique[!duplicated(rawrrndb_unique$genus), ]
+table(both_acc_and_tax_filtered$g %in% rawrrndb_unique$genus)
+rrndb_gg_merge <- inner_join(
+  both_acc_and_tax_filtered, 
+  rawrrndb_unique,
+ by=c("g" = "genus"))
 
 #srahits_tidy.R
 
@@ -147,33 +164,43 @@ srahits <- read.csv("~/Desktop/16scandidate/srafind/sraFind-Contig-biosample-wit
 srahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", srahits$organism_ScientificName)
 srahits <- srahits %>%
   filter(gs != "NA") %>%
+  filter(platform != "OXFORD_NANOPORE") %>%
+  filter(platform != "PACBIO_SMRT") %>% 
   as.data.frame()
 
 # Add in extra column for n at a given genus and species
 srahits <- srahits %>%
     group_by(gs) %>%
-      mutate(sra_n_gs = n()) %>%
-        as.data.frame()
+    mutate(sra_n_gs = n()) %>%
+    as.data.frame()
   
 
-
-sra_rrndb_gg_merge <- merge(rrndb_gg_merge, srahits[!duplicated(srahits$gs),], by = "gs")
-
+srahits_unique_at_gs <- srahits[!duplicated(srahits$gs), ]
+#unique(srahits$gs)
+sra_rrndb_gg_merge <- inner_join(
+  rrndb_gg_merge, 
+  srahits_unique_at_gs, by = "gs")
+table(rrndb_gg_merge$gs %in% srahits_unique_at_gs$gs)
 #####To compare n for given species on sra and gg
-sra_gg_ngsmerge <- inner_join(rawsrahits[!duplicated(rawsrahits$gs),], 
-                               both_acc_and_tax[!duplicated(both_acc_and_tax$gs),],
-                                  by="gs")
+# sra_gg_ngsmerge <- inner_join(rawsrahits[!duplicated(rawsrahits$gs),], 
+#                                both_acc_and_tax[!duplicated(both_acc_and_tax$gs),],
+#                                   by="gs")
 
 srarrndbgg16 <- sra_rrndb_gg_merge %>%
-  filter(7 >= X16S.gene.count) %>%
-  filter(4 <= X16S.gene.count) %>%
-         as.data.frame()
+  filter(7 >= mean16s) %>%
+  filter(3 <= mean16s) %>%
+  filter(1 >= stddev16s | is.na(stddev16s) ) %>%
+  as.data.frame()
   
+# select rows of interest for plotting, etc
+srarrndbgg16_unique <- srarrndbgg16[, c("k", "p",  "c", "o",        "f" ,       "g"  ,      "s" , "gs","gg_n_gs", "sra_n_gs", "platform" ) ]
+srarrndbgg16_unique <- srarrndbgg16_unique[!duplicated(srarrndbgg16_unique$gs),]
+
 ###### Add column for the percentile of sra_n_gs and gg_n_gs in sra_gg_merge.
 # perc_df_sra <- data.frame(value=quantile(srarrndbgg16$sra_n_gs,  probs = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)))
 # perc_df_gg <- data.frame(value=quantile(srarrndbgg16$gg_n_gs, probs = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)))
-perc_df_sra <- data.frame(value=quantile(srarrndbgg16$sra_n_gs,  probs = seq(0,1, .01)))
-perc_df_gg <- data.frame(value=quantile(srarrndbgg16$gg_n_gs, probs = seq(0,1, .01)))
+perc_df_sra <- data.frame(value=quantile(unique(srarrndbgg16$sra_n_gs),  probs = seq(0,1, .01)))
+perc_df_gg <- data.frame(value=quantile(unique(srarrndbgg16$gg_n_gs), probs = seq(0,1, .01)))
 perc_df_sra$percentile <-rownames(perc_df_sra)
 perc_df_gg$percentile <-rownames(perc_df_gg)
 srarrndbgg16$perc_sra <- NA
@@ -182,13 +209,13 @@ for (perc in 1:nrow(perc_df_sra)){
   if(perc == 1){
     next()
   } else {
-    for (r in 1:nrow(srarrndbgg16)){
+    for (r in 1:nrow(srarrndbgg16_unique)){
       if(
-          srarrndbgg16[r, "sra_n_gs"] >= perc_df_sra[perc-1, "value"] & 
-          srarrndbgg16[r, "sra_n_gs"] <= perc_df_sra[perc, "value"]
+        srarrndbgg16_unique[r, "sra_n_gs"] >= perc_df_sra[perc-1, "value"] & 
+        srarrndbgg16_unique[r, "sra_n_gs"] <= perc_df_sra[perc, "value"]
           ){
         
-          srarrndbgg16[r, "perc_sra"] <- perc_df_sra[perc-1, "percentile"]
+        srarrndbgg16_unique[r, "perc_sra"] <- perc_df_sra[perc-1, "percentile"]
       }
     }
   }
@@ -199,31 +226,36 @@ for (perc in 1:nrow(perc_df_gg)){
   if(perc == 1){
     next()
   } else {
-    for (r in 1:nrow(srarrndbgg16)){
+    for (r in 1:nrow(srarrndbgg16_unique)){
       if(
-        srarrndbgg16[r, "gg_n_gs"] >= perc_df_gg[perc-1, "value"] & 
-        srarrndbgg16[r, "gg_n_gs"] <= perc_df_gg[perc, "value"]
+        srarrndbgg16_unique[r, "gg_n_gs"] >= perc_df_gg[perc-1, "value"] & 
+        srarrndbgg16_unique[r, "gg_n_gs"] <= perc_df_gg[perc, "value"]
       ){
         
-        srarrndbgg16[r, "perc_gg"] <- perc_df_gg[perc-1, "percentile"]
+        srarrndbgg16_unique[r, "perc_gg"] <- perc_df_gg[perc-1, "percentile"]
       }
     }
   }
 }
+
+
 # convert percentile to integers
-srarrndbgg16$perc_gg <- as.numeric(gsub("%", "", srarrndbgg16$perc_gg))
-srarrndbgg16$perc_sra <- as.numeric(gsub("%", "", srarrndbgg16$perc_sra))
+srarrndbgg16_unique$perc_gg <- as.numeric(gsub("%", "", srarrndbgg16_unique$perc_gg))
+srarrndbgg16_unique$perc_sra <- as.numeric(gsub("%", "", srarrndbgg16_unique$perc_sra))
 # install.packages("ggrepel")
 library(ggrepel)
 library(ggplot2)
-srarrndbgg16$labelgs <- ifelse(srarrndbgg16$gs == "Pediococcus acidilactici", srarrndbgg16$gs, "")
-g <- ggplot(srarrndbgg16, aes(x=perc_sra, y=perc_gg, label=labelgs)) +
-      labs(x="sraFind Percentile",
+srarrndbgg16_unique$labelgs <- ifelse(srarrndbgg16_unique$gs == "Pediococcus acidilactici", srarrndbgg16_unique$gs, "")
+g <- ggplot(srarrndbgg16_unique, aes(x=sra_n_gs, y=perc_gg, label=labelgs)) +
+ # g <- ggplot(srarrndbgg16_unique, aes(x=sra_n_gs, y=gg_n_gs, label=labelgs)) +
+  scale_x_log10() +
+  #scale_y_log10() +
+  labs(x="sraFind hit",
            y="Greengenes Percentile",
            colour="Genus",
            title="Count distribution of species",
            subtitle="Comparing counts of species based on Greengenes and sraFind \n in order to find a candidate.") +
-        annotate("rect", xmin = 40, xmax = 60, ymin = 40, ymax = 60,
+        annotate("rect", xmin = 1, xmax = 50, ymin = 40, ymax = 60,
                  alpha = .2) 
 
 
