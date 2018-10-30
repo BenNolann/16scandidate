@@ -1,0 +1,52 @@
+---
+title: "Useful commands for scripts"
+output: html_document
+---
+
+## Exploring the data
+
+1) create a new dataframe that consists of an existing dataframe with has been altered through %>% and various commands.
+2) An example of above. Filtering through tax dataframe for the genus Loktanella.
+3) create a new dataframe which contains k to s columns, and a new column, n. Which is the number of hits on the gg database. And then distinct only retains unique rows.
+4) Unsure
+5) Creates a new column, and pastes the result for each of the columns k to s in the new column.
+6) New dataframe, makes changes to tax. Filters species not blank, genus not blank, grouop by k to s, new n column with counts, joins k to n together into one column and doesnt remove originals. Distinct retains only unique rows for name and n, and as.data.frame just makes sure the output is a dataframe.
+7) Creates a bar plot with tmp dataframe, x axis is reordered so that highest is at left. y axis is n, fill is the subdivision of x axis. stat is to map from variables produced by the aesthetics, colour. scale y as continous or log. facet grid includes a grid. Theme is used to edit axis labels, angle of text etc.
+8) Returns the max count.
+9) In count dataframe, group by Kingdom, get rid of blank species, return max counts
+10) In count dataframe, filter phylums that are equal to blank, filter max count.
+11) In column X.gg_id, find number 755605.
+```{bash eval=FALSE}
+1) results_df <- starting_dataframe %>% DO_SOME_STUFF()
+2) lok <- tax %>% 
+   filter(str_detect(g, "Loktanella"))
+3)  counts <- tax %>%
+   group_by(k, p, c, o, f,  g, s) %>%
+   mutate(n=n()) %>%
+   distinct( k, p, n, c, o, f,  g, s)%>%
+   as.data.frame()
+4) counts <- counts[!duplicated(counts),]
+5)  counts$name <- paste(counts$k, counts$p, counts$c, counts$o, counts$f, counts$g,    counts$s)
+6) tmp <-tax %>%
+   filter(s!="") %>%
+    filter( g!="") %>%
+   group_by(k, p, c, o, f,  g, s) %>%
+   mutate(n=n()) %>%
+   unite(name, k,p,c,o,f,g,s,n, remove = F) %>%
+    distinct( name, n)%>%
+    as.data.frame()
+7) ggplot(tmp, aes(x=reorder(s, -n), y=n, fill=k)) + geom_bar(stat="identity", color="black") +
+    scale_y_continuous() + facet_grid(~k, scales = "free") +
+     theme(axis.text.x = element_text(angle=45, hjust = 1))
+8) counts[counts$n == max(counts$n), ]
+9)  counts %>%
+   group_by(k)%>%
+   filter(s!="") %>%
+   filter(n==max(n))
+10)  counts %>%
+   filter(p=="") %>%
+   filter(n==max(n))
+11) grep("^755605$", rawacc$X.gg_id)
+
+```
+
