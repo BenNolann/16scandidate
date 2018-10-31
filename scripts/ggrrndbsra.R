@@ -44,6 +44,11 @@ ggped <- both_acc_and_tax[both_acc_and_tax$gs == "Pediococcus acidilactici", c("
 
 write.table(ggped, file = "~/Desktop/16scandidate/results/pedidacc", sep = "\t", col.names = FALSE, row.names = FALSE)
 
+
+
+write.table(greenidacc, file = "~/Desktop/16scandidate/greengenes/greenidacc", sep = "\t", col.names = FALSE, row.names = FALSE)
+
+
 # add column for n at a given genus and species
 both_acc_and_tax <- both_acc_and_tax %>%
   group_by(gs)%>%
@@ -56,6 +61,10 @@ both_acc_and_tax_filtered <- both_acc_and_tax %>%
   filter(s != "") %>%
   as.data.frame()
 
+# All greengenes id, accession, gs
+greenclean <- both_acc_and_tax_filtered[c("id", "accession", "gs")]
+
+write.table(greenclean, file = "~/Desktop/16scandidate/greengenes/greenidacc", sep = "\t", col.names = FALSE, row.names = FALSE)
 
 #ggplot(both_acc_and_tax_filtered, aes(x=gg_n_gs)) + geom_histogram(bins = 100)
 #ggplot(both_acc_and_tax_filtered, aes(y=gg_n_gs)) + geom_boxplot() +geom_point(aes(x=0))
