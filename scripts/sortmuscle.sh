@@ -2,7 +2,7 @@
 #Combination of sort16greengenes.sh and muscletree.sh
 
 OUTPUT_DIR=$1
-
+ORGNSM=$2
 
 #sort16greengenes.sh
 if [ -d "$OUTPUT_DIR" ]
@@ -16,7 +16,7 @@ if [ -d "$OUTPUT_DIR" ]
    mkdir $OUTPUT_DIR/iqtree/
 fi
 
-grep "Methanofollis liminatans" /Users/alexandranolan/Desktop/16scandidate/greengenes/greenidacc > $OUTPUT_DIR/greengenes/green_acid
+grep "$ORGNSM" /Users/alexandranolan/Desktop/16scandidate/greengenes/greenidacc > $OUTPUT_DIR/greengenes/green_acid
 
 while read id acc
   do echo $acc
