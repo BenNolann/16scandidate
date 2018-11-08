@@ -1,0 +1,1085 @@
+---
+title: "16S database merge"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###### Library
+```{r}
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(ggrepel)
+library(ggplot2)
+```
+## Greengenes
+###### Taxonomy file
+The Greengenes database consists of data for 16S. It contains a file for taxonomy and a file for the accession number of each organism. Both files contained the taxonomic id number for each entry. We tidied up both files and filtered out any outliers and merged the files using the common id number.
+The taxonomy file was read into R.
+Split fist column  so that id is everything before tab and k is everything after
+The headers were labelled and reordered.
+Underscores in rows were replaced with no space.
+``` {r}
+rawtax <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_taxonomy.txt", sep=";", stringsAsFactors = FALSE, header = FALSE)
+rawtax$id<- gsub("(\\d*)\\t(.*)", "\\1", rawtax$V1)
+rawtax$k<-  gsub("(\\d*)\\t(.*)"," \\2", rawtax$V1)
+rawtax$V1 <- NULL
+headers <- c("p", "c", "o", "f", "g", "s", "id", "k")
+ordered_headers <- c("k", "p", "c", "o", "f", "g", "s", "id")
+colnames(rawtax) <- headers
+tax <- rawtax[, ordered_headers]
+
+for (column in ordered_headers){
+ tax[, column]<- gsub(" .__", "",tax[, column])
+}
+tax$id <- as.numeric(tax$id)
+```
+
+###### Accesssion file
+Read in accessions from gg
+Check all tax ids in accessions
+
+```{r}
+rawacc <- read.csv("~/Desktop/16scandidate/greengenes/gg_13_5_accessions.txt", sep ="\t", stringsAsFactors = FALSE, header = TRUE)
+
+table(tax$id %in% rawacc$X.gg_id)
+```
+
+###### Merge taxonomy and accession files
+Taxa and accessions were merged by id.
+
+```{r}
+both_acc_and_tax <- merge(tax, rawacc, by.x = "id", by.y = "X.gg_id")
+colnames(both_acc_and_tax)
+```
+
+###### Genus and Species columns were adjusted
+g and s were combined into the one column
+The strain was removed from each entry 
+Column for n was added at a given genus and species
+Filter out those lacking species and genus
+
+```{r}
+both_acc_and_tax$gs <- paste(both_acc_and_tax$g, both_acc_and_tax$s, sep = " ") 
+both_acc_and_tax$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", both_acc_and_tax$gs)
+
+both_acc_and_tax <- both_acc_and_tax %>%
+  group_by(gs)%>%
+  mutate(gg_n_gs = n()) %>%
+  as.data.frame()
+
+both_acc_and_tax_filtered <- both_acc_and_tax %>%
+  filter(g != "") %>%
+  filter(s != "") %>%
+  as.data.frame()
+```
+
+###### rrnDB
+rrnDB is a database that contains valuable information on a large number of organisms, including the amount of 16S rDNA genes for a single organism, the biosample, accession, and NCBI tax id. The piece of information most important in this case is the 16S rDNA gene number.
+The rrnDB file was read into R.
+```{r}
+rawrrndb <- read.csv("~/Desktop/16scandidate/rrnDB/rrnDB-5.5.tsv", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+###### Genus Species column was adjusted
+The first and second strings were taken from the column and subsequently pasted together to form the genus sepcies column.
+The mean and sddev for rRNA counts at the genus level were taken.
+
+```{r}
+rawrrndb$genus <- gsub("(\\S+)\\s(\\S+).*", "\\1", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$species <- gsub("(\\S+)\\s(\\S+).*", "\\2", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$gs <- paste(rawrrndb$genus, rawrrndb$species)
+
+rawrrndb <- rawrrndb %>%
+  group_by(genus) %>%
+  mutate(mean16s=mean(X16S.gene.count, na.rm = T)) %>%
+  mutate(stddev16s=sd(X16S.gene.count, na.rm = T)) %>%
+  as.data.frame()
+```
+
+###### rrndb columns were adjusted.
+The columns were filtered based on relevance and the duplicated organisms at a genus level were removed.
+The greengenes taxonomy and accessions files were merged with the filtered rrndb file.
+
+
+```{r}
+rawrrndb_unique <- rawrrndb[, c("genus", "mean16s", "stddev16s") ]
+rawrrndb_unique <- rawrrndb_unique[!duplicated(rawrrndb_unique$genus), ]
+
+rrndb_gg_merge <- inner_join(
+  both_acc_and_tax_filtered, 
+  rawrrndb_unique,
+ by=c("g" = "genus"))
+```
+
+###### sraHits
+The sraHits file was read into R.
+The genus species column was adjusted
+```{r}
+rawsrahits <- read.csv("~/Desktop/16scandidate/srafind/sraFind-Contig-biosample-with-SRA-hits.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
+```
+
+###### The genus species column was adjusted, and other filtering occured.
+The strain was removed from the scientific name column and assigned to a new column 'gs'.
+All NA entries in the gs column were filtered out. As well as long-read sequencing platforms.
+An extra column for n at a given genus and species was added.
+Duplicates at the genus species level were removed.
+
+``` {r}
+rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
+
+srahits <- rawsrahits %>%
+  filter(gs != "NA") %>%
+  filter(platform != "OXFORD_NANOPORE") %>%
+  filter(platform != "PACBIO_SMRT") %>% 
+  as.data.frame()
+
+srahits <- srahits %>%
+    group_by(gs) %>%
+    mutate(sra_n_gs = n()) %>%
+    as.data.frame()
+
+srahits_unique_at_gs <- srahits[!duplicated(srahits$gs), ]
+```
+
+###### Greengenes, rrnDB and sraHits were merged
+Greengenes, rrnDB and sraHits were merged at the genus species level.
+
+```{r}
+sra_rrndb_gg_merge <- inner_join(
+  rrndb_gg_merge, 
+  srahits_unique_at_gs, by = "gs")
+```
+
+###### Sorting the resulting dataframe
+Using the 16S rDNA region count given by rrnDB, organisms outside the range of 3<=x=<7 were filtered against.
+ Organisms with 1 region were also removed, and those with a standard deviation of NA.
+The dataframe was then organised by columns that are relevant and duplicates once more removed.
+
+```{r}
+srarrndbgg16 <- sra_rrndb_gg_merge %>%
+  filter(7 >= mean16s) %>%
+  filter(3 <= mean16s) %>%
+  filter(1 >= stddev16s | is.na(stddev16s) ) %>%
+  as.data.frame()
+
+srarrndbgg16_unique <- srarrndbgg16[, c("k", "p", "c", "o", "f" , "g", "s", "gs", "gg_n_gs", "sra_n_gs", "platform" ) ]
+srarrndbgg16_unique <- srarrndbgg16_unique[!duplicated(srarrndbgg16_unique$gs),]
+```
+
+###### Adding a percentile for hits on sra and greengenes
+
+A column for the percentile of sra_n_gs and gg_n_gs was added in srarrndbgg_merge. 
+
+```{r}
+perc_df_sra <- data.frame(value=quantile(unique(srarrndbgg16$sra_n_gs),  probs = seq(0,1, .01)))
+perc_df_gg <- data.frame(value=quantile(unique(srarrndbgg16$gg_n_gs), probs = seq(0,1, .01)))
+perc_df_sra$percentile <-rownames(perc_df_sra)
+perc_df_gg$percentile <-rownames(perc_df_gg)
+srarrndbgg16$perc_sra <- NA
+srarrndbgg16$perc_gg <- NA
+```
+
+###### Adding a percentile for hits on sra and greengenes (contd.)
+
+A loop was made to identify where the value for each organism fell on the percentile list. sra was done first.
+
+```{r}
+for (perc in 1:nrow(perc_df_sra)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(srarrndbgg16_unique)){
+      if(
+        srarrndbgg16_unique[r, "sra_n_gs"] >= perc_df_sra[perc-1, "value"] & 
+        srarrndbgg16_unique[r, "sra_n_gs"] <= perc_df_sra[perc, "value"]
+          ){
+        
+        srarrndbgg16_unique[r, "perc_sra"] <- perc_df_sra[perc-1, "percentile"]
+      }
+    }
+  }
+}
+
+```
+
+###### Adding a percentile for hits on sra and greengenes (contd.)
+
+The same was done again for greengenes
+
+```{r}
+for (perc in 1:nrow(perc_df_gg)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(srarrndbgg16_unique)){
+      if(
+        srarrndbgg16_unique[r, "gg_n_gs"] >= perc_df_gg[perc-1, "value"] & 
+        srarrndbgg16_unique[r, "gg_n_gs"] <= perc_df_gg[perc, "value"]
+      ){
+        
+        srarrndbgg16_unique[r, "perc_gg"] <- perc_df_gg[perc-1, "percentile"]
+      }
+    }
+  }
+}
+```
+
+###### Adding a percentile for hits on sra and greengenes (contd.)
+
+The percentiles were converted to integers with the intention of adding the values to a plot
+
+```{r}
+srarrndbgg16_unique$perc_gg <- as.numeric(gsub("%", "", srarrndbgg16_unique$perc_gg))
+srarrndbgg16_unique$perc_sra <- as.numeric(gsub("%", "", srarrndbgg16_unique$perc_sra))
+```
+
+###### Creating a plot
+
+Labels only for organisms that exist within the desired rectangle are shown. The code below must be done before the process of making the plot to achieve this goal.
+
+```{r}
+sraminhits <- 5
+sramaxhits <- 35
+ggmin <- 40
+ggmax <- 60
+
+srarrndbgg16_unique$rectlabel <- ifelse(
+  srarrndbgg16_unique$sra_n_gs >= sraminhits & 
+  srarrndbgg16_unique$sra_n_gs <= sramaxhits &
+  srarrndbgg16_unique$perc_gg >= ggmin &
+  srarrndbgg16_unique$perc_gg <= ggmax, 
+  srarrndbgg16_unique$gs , "")
+```
+
+###### Creating a plot (contd.)
+
+The main consituents of the plot were made and assigned to a value, with the purpose of being used with either dark or white backgrounds. The plot consisted of sraHits on the x-axis and the percentile hits on Greengenes on the y-axis.
+
+``` {r}
+
+g <- ggplot(srarrndbgg16_unique, aes(x=sra_n_gs, y=perc_gg, label=rectlabel)) +
+  scale_x_log10() +
+  labs(x="sraFind hit",
+           y="Greengenes Percentile",
+           colour="Genus",
+           title="Count distribution of species",
+           subtitle="Comparing counts of species based on Greengenes and sraFind \n in order to find a candidate.") +
+        annotate("rect", xmin = 5, xmax = 35, ymin = 40, ymax = 60,
+                 alpha = .2) 
+```
+
+###### The plot was created
+This version is the regular black plot designed for a light background. 
+
+```{r}
+(glight <- g + 
+    geom_point() + 
+    theme(axis.line.x = element_line(colour="black", size=1),
+           axis.line.y = element_line(colour="black", size=1),
+           panel.background=element_rect(fill="transparent"),
+           panel.grid.minor = element_blank(),
+           panel.grid.major = element_blank()) +
+       geom_label_repel() )
+```
+
+##### The plot was created (contd.)
+
+If desired, a light plot designed for a dark background can also be made.
+
+```{r}
+gdark <- g + 
+    geom_point(color="white", size=2) + 
+    theme(text = element_text(colour = "white"),
+          rect = element_rect(fill = ""),
+                    axis.text = element_text(colour = "white"),
+                    axis.ticks = element_line(colour = "white"),
+                    axis.line.x = element_line(colour="white", size=1),
+                    axis.line.y = element_line(colour="white", size=1),
+                    panel.background=element_rect(fill="transparent"),
+              plot.background = element_rect(fill = "transparent",colour = NA),
+          panel.grid.minor = element_blank(),
+                    panel.grid.major = element_blank()) +
+    scale_color_manual(values = c("white")) +
+  geom_label_repel(segment.colour = "white", color="white", fill="transparent") 
+```
+
+###### Exporting the plot
+
+Here lies the code for exporting the plot for the light version.
+A pdf of the light and png of the dark plots can be saved. 
+
+``` {r}
+pdf(file = "~/Desktop/ggsra_light.pdf", width = 7, height = 4)
+print(glight)
+dev.off()
+
+ggsave(glight, filename = "~/Desktop/ggsra_light.pdf",  bg = "transparent")
+ggsave(gdark, filename = "~/Desktop/ggsra_dark.png",  bg = "transparent",width = 7, height = 4.5)
+
+```
+
+## SILVA
+###### Both taxonomy and accessions were in the same file for SILVA
+
+The accessions and taxonomy file was read into R.
+
+```{r}
+silvatax <- read.csv("~/Downloads/taxmap_ncbi_ssu_ref_nr99_132.txt", sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+```
+
+###### Filtered out unusable organisms
+
+organisms containing "uncultured bacterium","prokaryotes", "Candidatus", "unclassified", "unidentified" were removed.
+
+```{r}
+silvatax <- silvatax[silvatax$V5 != "uncultured bacterium", ]
+silvatax <- silvatax[grepl("prokaryotes",silvatax$V4), ]
+silvatax$V5 <- gsub("Candidatus", "", silvatax$V5)
+silvatax <-silvatax[!grepl("[Uu]nclassified",silvatax$V4), ]
+silvataxclean <- silvatax[!grepl("[Uu]nidentified",silvatax$V4), ]
+```
+
+###### Genus species column was adjusted.
+
+The genus and species were separated from a column, and printed separately to each make their own respective column. With the genus species column being a result from the combination of these two. Strains were removed in this process.
+
+```{r}
+silvataxclean$g <- gsub("(\\S+)\\s(\\S+).*", "\\1", silvataxclean$V5)
+silvataxclean$s <- gsub("(\\S+)\\s(\\S+).*", "\\2", silvataxclean$V5)
+silvataxclean$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", silvataxclean$V5)
+table(silvataxclean$s=="sp.")
+```
+
+###### More filtering
+
+The V1 column was renamed to accession. 
+Accessions, genus species, and species which were equal to "sp." were filtered out.
+A count for the number of hits for species level on silva.
+```{r}
+silvataxclean$accession <- silvataxclean$V1
+silvataxclean$V1 <- NULL
+
+silvataxclean <- silvataxclean %>%
+                filter(accession !=" ") %>%
+                filter(gs !=" ") %>%
+                filter(s != "sp.") %>%
+                as.data.frame()
+
+silvataxclean <- silvataxclean %>% 
+  group_by(gs) %>%
+  mutate(silva_ngs = n()) %>%
+  as.data.frame()
+```
+
+###### rrnDB
+Similarly to what was done previously, rrnDB was used as a means to identify organisms with a certain range of 16S regions.
+The rrnDB file was read into R.
+```{r}
+rawrrndb <- read.csv("~/Desktop/16scandidate/rrnDB/rrnDB-5.5.tsv", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+###### Genus Species column was adjusted
+The first and second strings were taken from the column and subsequently pasted together to form the genus sepcies column.
+The mean and sddev for rRNA counts at the genus level were taken.
+
+```{r}
+rawrrndb$genus <- gsub("(\\S+)\\s(\\S+).*", "\\1", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$species <- gsub("(\\S+)\\s(\\S+).*", "\\2", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$gs <- paste(rawrrndb$genus, rawrrndb$species)
+
+rawrrndb <- rawrrndb %>%
+  group_by(genus) %>%
+  mutate(mean16s=mean(X16S.gene.count, na.rm = T)) %>%
+  mutate(stddev16s=sd(X16S.gene.count, na.rm = T)) %>%
+  as.data.frame()
+```
+
+###### rrndb columns were adjusted.
+The columns were filtered based on relevance and the duplicated organisms at a genus level were removed.
+The SILVA taxonomy and accessions file was merged with the filtered rrndb file.
+
+```{r}
+rawrrndb_unique <- rawrrndb[, c("genus", "mean16s", "stddev16s") ]
+rawrrndb_unique <- rawrrndb_unique[!duplicated(rawrrndb_unique$genus), ]
+
+silvarrndb <- inner_join(
+                         silvataxclean,
+                        rawrrndb_unique,
+                        by=c("g"="genus"))
+```
+
+###### sraHits
+Similarly to what was done with Greengenes, the sraHits file was read into R.
+The genus species column was adjusted
+```{r}
+rawsrahits <- read.csv("~/Desktop/16scandidate/srafind/sraFind-Contig-biosample-with-SRA-hits.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
+```
+
+###### The genus species column was adjusted, and other filtering occured.
+The strain was removed from the scientific name column and assigned to a new column 'gs'.
+All NA entries in the gs column were filtered out. As well as long-read sequencing platforms.
+An extra column for n at a given genus and species was added.
+Duplicates at the genus species level were removed.
+
+```{r}
+rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
+
+srahits <- rawsrahits %>%
+  filter(gs != "NA") %>%
+  filter(platform != "OXFORD_NANOPORE") %>%
+  filter(platform != "PACBIO_SMRT") %>% 
+  as.data.frame()
+
+srahits <- srahits %>%
+    group_by(gs) %>%
+    mutate(sra_n_gs = n()) %>%
+    as.data.frame()
+
+srahits_unique_at_gs <- srahits[!duplicated(srahits$gs), ]
+```
+
+###### Merging of SILVA, sraHits and rrnDB
+
+SILVA, rrnDB and sraHits were merged at the genus species level.
+
+```{r}
+silvarrndbsra <- inner_join(silvarrndb, srahits_unique_at_gs, by=c("gs"))
+```
+
+###### Sorting the resulting dataframe
+Using the 16S rDNA region count given by rrnDB, organisms outside the range of 4<=x=<6 were filtered against.
+Organisms with 1 region were also removed, and those with a standard deviation of NA.
+The dataframe was then organised by columns that are relevant and duplicates once more removed.
+
+```{r}
+sixteen46silvarrndbsra <- silvarrndbsra %>%
+  filter(6 >= mean16s) %>%
+  filter(4 <= mean16s) %>%
+  filter(1 >= stddev16s | is.na(stddev16s) ) %>%
+  as.data.frame()
+```
+
+###### Selecting relevant columns and removing duplicated organisms at the species level
+
+```{r}
+sixteenclean <- sixteen46silvarrndbsra[, c("g", "s", "gs", "silva_ngs", "sra_n_gs", "platform")]
+sixteenclean_unique <- sixteenclean[!duplicated(sixteenclean$gs),]
+```
+
+###### Adding a percentile for hits on sra and SILVA
+
+A column for the percentile of sra_n_gs and silva_n_gs was added in the merge. 
+
+```{r}
+perc_sra <- data.frame(value=quantile(unique(sixteenclean_unique$sra_n_gs),  probs = seq(0,1, .01)))
+perc_silva <- data.frame(value=quantile(unique(sixteenclean_unique$silva_ngs), probs = seq(0,1, .01)))
+perc_sra$percentile <-rownames(perc_sra)
+perc_silva$percentile <-rownames(perc_silva)
+sixteenclean_unique$perc_sra <- NA
+sixteenclean_unique$perc_silva <- NA
+```
+
+###### Adding a percentile for hits on sra and SILVA (contd.)
+
+A loop was made to identify where the value for each organism fell on the percentile list. sra was done first.
+
+```{r}
+for (perc in 1:nrow(perc_sra)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(sixteenclean_unique)){
+      if(
+        sixteenclean_unique[r, "sra_n_gs"] >= perc_sra[perc-1, "value"] & 
+        sixteenclean_unique[r, "sra_n_gs"] <= perc_sra[perc, "value"]
+      ){
+        
+        sixteenclean_unique[r, "perc_sra"] <- perc_sra[perc-1, "percentile"]
+      }
+    }
+  }
+}
+```
+
+###### Adding a percentile for hits on sra and SILVA (contd.)
+
+The same was done again for SILVA
+
+```{r}
+for (perc in 1:nrow(perc_silva)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(sixteenclean_unique)){
+      if(
+        sixteenclean_unique[r, "silva_ngs"] >= perc_silva[perc-1, "value"] & 
+        sixteenclean_unique[r, "silva_ngs"] <= perc_silva[perc, "value"]
+      ){
+        
+        sixteenclean_unique[r, "perc_silva"] <- perc_silva[perc-1, "percentile"]
+      }
+    }
+  }
+}
+```
+
+###### Adding a percentile for hits on sra and greengenes (contd.)
+
+The percentiles were converted to integers with the intention of adding the values to a plot
+
+```{r}
+sixteenclean_unique$perc_silva <- as.numeric(gsub("%", "", sixteenclean_unique$perc_silva))
+sixteenclean_unique$perc_sra <-  as.numeric(gsub("%", "", sixteenclean_unique$perc_sra))
+```
+
+###### Creating a plot
+
+Labels only for organisms that exist within the desired rectangle are shown. The code below must be done before the process of making the plot to achieve this goal.
+
+```{r}
+sraminhits <- 5
+sramaxhits <- 35
+silvamin <- 40
+silvamax <- 60
+
+sixteenclean_unique$rectlabel <- ifelse(
+  sixteenclean_unique$sra_n_gs >= sraminhits & 
+  sixteenclean_unique$sra_n_gs <= sramaxhits &
+  sixteenclean_unique$perc_silva >= silvamin &
+  sixteenclean_unique$perc_silva <= silvamax, 
+  sixteenclean_unique$gs , "")
+```
+
+###### Creating a plot (contd.)
+
+The main consituents of the plot were made and assigned to a value, with the purpose of being used with either dark or white backgrounds. The plot consisted of sraHits on the x-axis and the percentile hits on SILVA on the y-axis.
+
+```{r}
+p <- ggplot(sixteenclean_unique, aes(x=sra_n_gs, y=perc_silva, label=rectlabel)) +
+       scale_x_log10() +
+         labs(x="sraHits",
+              y="silva",
+              title="Count of organisms that are present in sraHits, SILVA and rrndb") +
+         annotate("rect", xmin = 5, xmax = 35, ymin = 40, ymax = 60,
+                  alpha = .2)
+```
+
+###### Creating a plot (contd.)
+
+The plot constructed was done so with the intended background to be light.
+
+```{r}
+(plight <- p +
+          geom_point() +
+          geom_label_repel()+
+          theme(axis.line.x = element_line(colour="black", size=1),
+                axis.line.y = element_line(colour="black", size=1),
+                panel.background=element_rect(fill="transparent"),
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_blank()))
+```
+
+###### Creating a plot (contd.)
+
+The plot constructed was done so with the intended background to be dark.
+
+```{r}
+pdark <- p + 
+    geom_point(color="white", size=2) + 
+    theme(text = element_text(colour = "white"),
+          rect = element_rect(fill = ""),
+                    axis.text = element_text(colour = "white"),
+                    axis.ticks = element_line(colour = "white"),
+                    axis.line.x = element_line(colour="white", size=1),
+                    axis.line.y = element_line(colour="white", size=1),
+                    panel.background=element_rect(fill="transparent"),
+              plot.background = element_rect(fill = "transparent",colour = NA),
+          panel.grid.minor = element_blank(),
+                    panel.grid.major = element_blank()) +
+    scale_color_manual(values = c("white")) +
+  geom_label_repel(segment.colour = "white", color="white", fill="transparent") 
+```
+
+###### Exporting the plot
+
+```{r}
+pdf(file = "~/Desktop/silva_light.pdf", width = 7, height = 4)
+print(plight)
+dev.off()
+ggsave(plight, filename = "~/Desktop/silva_light.pdf",  bg = "transparent")
+ggsave(pdark, filename = "~/Desktop/silva_dark.png",  bg = "transparent",width = 7, height = 4.5)
+```
+
+
+## RDP
+###### Both accessions and taxonomy were in the same file for RDP, however archaea and bacteria were in separate files. RDP was a lot trickier to tidy up than the Greengenes or SILVA. Both files also contained the sequences for the 16S rRNA.
+
+The header line for each sequence, containing the lineage and accession was taken out for use in R.
+
+```{bash eval=FALSE}
+grep ">*;genus" ~/Downloads/current_Bacteria_unaligned.fa > ~/Desktop/16scandidate/rdp/bacteriaheader
+grep ">*;genus" ~/Downloads/current_Archaea_unaligned.fa >  ~/Desktop/16scandiate/rdp/archaeaheader
+```
+
+###### Reading in bacteria
+
+The RDP file containing the header for bacteria was read into R.
+
+```{r}
+rdpbacteria <- read.csv("~/Desktop/16scandidate/rdp/bacteriaheader", header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+###### Filtering out unwanted organisms
+
+Organisms containing "uncultured bacterium", "uncultured organism", "uncultured soil", "uncultured prokaryote", "endophytic bacterium", were removed.
+The word uncultured was then removed, similarly with Candidatus in all columns. The first column was then split into its components, accession, genus and species, with the latter two also forming a single column.
+```{r}
+rdpbacteria <- rdpbacteria[!grepl(".*uncultured bacterium.*", rdpbacteria$V1), ]
+rdpbacteria <- rdpbacteria[!grepl(".*uncultured organism*", rdpbacteria$V1), ]
+rdpbacteria <- rdpbacteria[!grepl(".*uncultured soil*", rdpbacteria$V1), ]
+rdpbacteria <- rdpbacteria[!grepl(".*uncultured prokaryote*", rdpbacteria$V1), ]
+rdpbacteria <- rdpbacteria[!grepl(".*endophytic bacterium*", rdpbacteria$V1), ]
+rdpbacteria$V1 <- gsub("(uncultured)\\s", "", rdpbacteria$V1)
+rdpbacteria$V1 <- gsub("Candidatus ", "", rdpbacteria$V1)
+rdpbacteria$V2 <- gsub("Candidatus ", "", rdpbacteria$V2)
+rdpbacteria$acc <- gsub(">(.*?) .*", "\\1", rdpbacteria$V1) 
+rdpbacteria$g <- gsub(">(.*?) +(.*?) .*", "\\2", rdpbacteria$V1) 
+rdpbacteria$s <- gsub(">(.*?) +(.*?) (.*)", "\\3", rdpbacteria$V1) 
+rdpbacteria$gs <- gsub(">(.*?) +(.*?) (.*)", "\\2 \\3", rdpbacteria$V1)
+```
+
+###### Tidying up columns
+
+A number of organisms contained suborder and subclass divisions. These were removed to maintain uniformity within the file.
+The second column, containing the lineage, contained the labels for taxonomic grouping. These labels were removed.
+Other unhelpful words were removed. A column was created to show the number of strings in each lineage ie. to make no more organisms had outlying taxonomic labels similar to suborder and subclass.
+```{r}
+rdpbacteria$V2 <- gsub("order;.*;suborder", "order", rdpbacteria$V2)
+rdpbacteria$V2 <- gsub("class;.*;subclass", "class", rdpbacteria$V2)
+rdpbacteria$V2 <- gsub("domain;|phylum;|class;|order;|family;|genus;|sub;|genus", "", rdpbacteria$V2)
+rdpbacteria$V2 <- gsub("Lineage=Root;", "", rdpbacteria$V2)
+rdpbacteria$V2 <- gsub("rootrank;", "", rdpbacteria$V2)
+rdpbacteria$V3 <- str_count(rdpbacteria$V2, ";")
+```
+
+###### Tidying up columns (contd.)
+
+A histogram was used to view the column V3.
+All organisms that did not contain 6 (Domain, Phylum, Class, Order Family, Genus) strings in V2 were removed.
+
+```{r}
+hist(rdpbacteria$V3)
+
+rdpbacteria <- rdpbacteria %>%
+  filter(V3 =="6") %>%
+  as.data.frame()
+```
+
+###### Tidying up columns (contd.)
+
+V2 was separated into each taxonomic group.
+
+```{r}
+rdpbacteria$Domain <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\1", rdpbacteria$V2)
+rdpbacteria$Phylum <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\2", rdpbacteria$V2)
+rdpbacteria$Class <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\3", rdpbacteria$V2)
+rdpbacteria$Order <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\4", rdpbacteria$V2)
+rdpbacteria$Family <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\5", rdpbacteria$V2)
+rdpbacteria$Genus <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\6", rdpbacteria$V2)
+rdpbacteria$V2 <- NULL
+rdpbacteria$V1 <- NULL
+rdpbacteria$V3 <- NULL
+```
+
+###### Headers
+
+Each column was labelled and ordered.
+
+```{r}
+headers <- c("Accessions", "g", "s", "gs", "Domain", "Phylum", "Class", "Order", "Family", "Genus")
+ordered_headers <- c("Accessions", "Domain", "Phylum", "Class", "Order", "Family", "Genus", "g", "s", "gs")
+colnames(rdpbacteria) <- headers
+rdpbacteria <- rdpbacteria[, ordered_headers]
+```
+
+###### Filtering unhelpful organisms
+
+Any organism in which the genus in V1 did not match the genus in V2 was removed.
+Any species denoted with "sp." was removed.
+A column was made for species which only took the species name, this removed the strain and any other unhelpful characters from the column.
+```{r}
+rdpbacteria <- rdpbacteria[rdpbacteria$Genus == rdpbacteria$g, ]
+rdpbacteria <- rdpbacteria[!grepl("^sp.", rdpbacteria$s), ]
+rdpbacteria$species <- gsub("([[:lower:]]*).*", "\\1", rdpbacteria$s)
+```
+
+###### Reading in archaea
+
+The file containing the headers for archaea was read into R.
+
+```{r}
+rdparchaea <- read.csv("~/Desktop/16scandidate/rdp/archaeaheader", header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+###### Tidying up columns
+
+Approximately one third of the organisms present in this dataset contained 5 taxonomic groupings. The grouping missing was class. "incertae_sedis" was placed as the class for these organisms.
+The word Candidatus was removed from both columns.
+```{r}
+rdparchaea$V2 <-ifelse(
+  !grepl("class;", rdparchaea$V2),
+  gsub("phylum;", "phylum;incertae_sedis;class;", rdparchaea$V2),
+  rdparchaea$V2   
+  )
+
+rdparchaea$V1 <- gsub("Candidatus ", "", rdparchaea$V1)
+rdparchaea$V2 <- gsub("Candidatus ", "", rdparchaea$V2)
+```
+
+###### Tidying up columns (contd.)
+
+V2 was separated into the taxonomic groupings. Unhelpful words were removed from the column. A new column was created that showed the number of strings in V2. This was then visualised with a histogram.
+```{r}
+rdparchaea$V2 <- gsub("domain;|phylum;|class;|order;|family;|genus", "", rdparchaea$V2)
+rdparchaea$V2 <- gsub("Lineage=Root;", "", rdparchaea$V2)
+rdparchaea$V2 <- gsub("rootrank;", "", rdparchaea$V2)
+rdparchaea$V3 <- str_count(rdparchaea$V2, ";")
+hist(rdparchaea$V3)
+```
+
+###### Tidying up columns (contd.)
+
+V1 was separated and tidied up. Any organism containing "uncultured archaeon", "uncultured bacterium" were removed. The word "uncultured" was removed. The accession number, genus and species were each given a separate column, with the latter two also combining to form a singular column.
+
+```{r}
+rdparchaea <- rdparchaea[!grepl(".*uncultured archaeon.*", rdparchaea$V1), ]
+rdparchaea <- rdparchaea[!grepl(".*uncultured bacterium.*", rdparchaea$V1), ]
+rdparchaea$V1 <- gsub("(uncultured)\\s", "", rdparchaea$V1)
+rdparchaea$acc <- gsub(">(.*?) .*", "\\1", rdparchaea$V1) 
+rdparchaea$g <- gsub(">(.*?) (.*?) .*", "\\2", rdparchaea$V1) 
+rdparchaea$s <- gsub(">(.*?) (.*?) (.*)", "\\3", rdparchaea$V1) 
+rdparchaea$gs <- gsub(">(.*?) (.*?) (.*)", "\\2 \\3", rdparchaea$V1)
+```
+
+###### Removing outliers
+
+Any organism that did not equal 6 strings in the taxonomic grouping in V2 was removed.
+
+```{r}
+rdparchaea <- rdparchaea %>%
+  filter(V3 =="6") %>%
+  as.data.frame()
+```
+
+###### Tidying up columns (contd.)
+
+V2 was separated based on taxonomic grouping. Accessions was renamed for the intention of merging with the bacteria file in the future.
+
+```{r}
+rdparchaea$Domain <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\1", rdparchaea$V2)
+rdparchaea$Phylum <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\2", rdparchaea$V2)
+rdparchaea$Class <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\3", rdparchaea$V2)
+rdparchaea$Order <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\4", rdparchaea$V2)
+rdparchaea$Family <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\5", rdparchaea$V2)
+rdparchaea$Genus <-  gsub("(.*?);(.*?);(.*?);(.*?);(.*?);(.*?);", "\\6", rdparchaea$V2)
+rdparchaea$Accessions <- rdparchaea$acc
+rdparchaea$V2 <- NULL
+rdparchaea$V1 <- NULL
+rdparchaea$V3 <- NULL
+rdparchaea$acc <- NULL
+```
+
+###### Removing any outliers
+
+Any organism in which the genus in V1 did not match the genus in V2, was removed.
+Any organism in which the species was "sp.", was removed
+The species column was created by selecting against strain and any other unwanted characters.
+
+```{r}
+rdparchaea <- rdparchaea[rdparchaea$Genus == rdparchaea$g, ]
+rdparchaea <- rdparchaea[!grepl("^sp.", rdparchaea$s), ]
+rdparchaea$species <- gsub("([[:lower:]]*).*", "\\1", rdparchaea$s)
+```
+
+###### Headers
+
+The headers for archaea and bacteria were both ordered in the same way, in preparation for merging.
+
+```{r}
+arheaders <- c( "g", "s", "gs", "Domain", "Phylum", "Class", "Order", "Family", "Genus", "Accessions", "species")
+arheadord <- c("Accessions", "Domain", "Phylum", "Class", "Order", "Family", "Genus", "g", "s", "gs", "species")
+colnames(rdparchaea) <- arheaders
+rdparchaea <- rdparchaea[, arheadord]
+```
+
+###### Merging
+
+Both bacteria and archaea dataframes were added together.
+
+```{r}
+rdp <- rbind(rdparchaea, rdpbacteria) %>%
+             as.data.frame()
+```
+
+###### Final column adjustments
+
+The "GenusSpecies" column was created, using the clean and filtered "species", and "Genus" columns
+A count for the hits of each organism for RDP was added as a column, similar to what was done for Greengenes and SILVA.
+
+```{r}
+rdp$GenusSpecies <- paste(rdp$g, rdp$species, sep = " ")
+rdp <- rdp %>%
+       group_by(GenusSpecies) %>%
+       mutate(rdp_ngs = n()) %>%
+       as.data.frame()
+```
+
+###### rrnDB
+Similarly to what was done previously, rrnDB was used as a means to identify organisms with a certain range of 16S regions.
+The rrnDB file was read into R.
+```{r}
+rawrrndb <- read.csv("~/Desktop/16scandidate/rrnDB/rrnDB-5.5.tsv", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+```
+
+###### Genus Species column was adjusted
+The first and second strings were taken from the column and subsequently pasted together to form the genus sepcies column.
+The mean and sddev for rRNA counts at the genus level were taken.
+
+```{r}
+rawrrndb$genus <- gsub("(\\S+)\\s(\\S+).*", "\\1", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$species <- gsub("(\\S+)\\s(\\S+).*", "\\2", rawrrndb$`NCBI.scientific.name`)
+rawrrndb$gs <- paste(rawrrndb$genus, rawrrndb$species)
+
+rawrrndb <- rawrrndb %>%
+  group_by(genus) %>%
+  mutate(mean16s=mean(X16S.gene.count, na.rm = T)) %>%
+  mutate(stddev16s=sd(X16S.gene.count, na.rm = T)) %>%
+  as.data.frame()
+```
+
+###### rrndb columns were adjusted.
+The columns were filtered based on relevance and the duplicated organisms at a genus level were removed.
+The RDP file was merged with the filtered rrndb file.
+
+```{r}
+rawrrndb_unique <- rawrrndb[, c("genus", "mean16s", "stddev16s") ]
+rawrrndb_unique <- rawrrndb_unique[!duplicated(rawrrndb_unique$genus), ]
+
+rdprrndb <- inner_join(
+                       rdp,
+                       rawrrndb_unique,
+                       by = c("Genus"="genus"))
+```
+
+###### sraHits
+Similarly to what was done with Greengenes and SILVA, the sraHits file was read into R.
+The genus species column was adjusted
+```{r}
+rawsrahits <- read.csv("~/Desktop/16scandidate/srafind/sraFind-Contig-biosample-with-SRA-hits.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
+```
+
+###### The genus species column was adjusted, and other filtering occured.
+The strain was removed from the scientific name column and assigned to a new column 'gs'.
+All NA entries in the gs column were filtered out. As well as long-read sequencing platforms.
+An extra column for n at a given genus and species was added.
+Duplicates at the genus species level were removed.
+
+```{r}
+rawsrahits$gs <- gsub("(\\S+)\\s(\\S+).*", "\\1 \\2", rawsrahits$organism_ScientificName)
+
+srahits <- rawsrahits %>%
+  filter(gs != "NA") %>%
+  filter(platform != "OXFORD_NANOPORE") %>%
+  filter(platform != "PACBIO_SMRT") %>% 
+  as.data.frame()
+
+srahits <- srahits %>%
+    group_by(gs) %>%
+    mutate(sra_n_gs = n()) %>%
+    as.data.frame()
+
+srahits_unique_at_gs <- srahits[!duplicated(srahits$gs), ]
+```
+
+###### Merging of RDP, sraHits and rrnDB
+
+RDP, rrnDB and sraHits were merged at the genus species level.
+
+```{r}
+rdprrndbsra <- inner_join(rdprrndb, srahits_unique_at_gs, by = c("GenusSpecies" = "gs"))
+```
+
+###### Sorting the resulting dataframe
+Using the 16S rDNA region count given by rrnDB, organisms outside the range of 4<=x=<6 were filtered against.
+Organisms with 1 region were also removed, and those with a standard deviation of NA.
+The dataframe was then organised by columns that are relevant and duplicates once more removed.
+
+```{r}
+rdprrndbsra <- rdprrndbsra %>%
+             filter(7 >= mean16s) %>%
+             filter(4 <= mean16s) %>%
+             filter(1 >= mean16s | is.na(stddev16s)) %>%
+            as.data.frame
+```
+
+###### Selecting relevant columns and removing duplicated organisms at the species level
+
+```{r}
+rdprrndbsra_clean <- rdprrndbsra[, c("Genus", "species", "GenusSpecies", "rdp_ngs", "sra_n_gs", "platform" )]
+rdprrndbsra_clean <- rdprrndbsra[!duplicated(rdprrndbsra$GenusSpecies),]
+```
+
+###### Adding a percentile for hits on sra and RDP
+
+A column for the percentile of sra_n_gs and rdp_n_gs was added in the merge. 
+
+```{r}
+perc_sra <- data.frame(value=quantile(unique(rdprrndbsra_clean$sra_n_gs),  probs = seq(0,1, .01)))
+perc_rdp <- data.frame(value=quantile(unique(rdprrndbsra_clean$rdp_ngs), probs = seq(0,1, .01)))
+perc_sra$percentile <-rownames(perc_sra)
+perc_rdp$percentile <-rownames(perc_rdp)
+rdprrndbsra_clean$perc_sra <- NA
+rdprrndbsra_clean$perc_rdp <- NA
+```
+
+###### Adding a percentile for hits on sra and RDP (contd.)
+
+A loop was made to assign the value for each organism in sra to a percentile.
+
+```{r}
+for (perc in 1:nrow(perc_sra)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(rdprrndbsra_clean)){
+      if(
+        rdprrndbsra_clean[r, "sra_n_gs"] >= perc_sra[perc-1, "value"] & 
+        rdprrndbsra_clean[r, "sra_n_gs"] <= perc_sra[perc, "value"]
+      ){
+        
+        rdprrndbsra_clean[r, "perc_sra"] <- perc_sra[perc-1, "percentile"]
+      }
+    }
+  }
+}
+```
+
+###### Adding a percentile for hits on sra and RDP (contd.)
+
+The same was done for RDP
+
+```{r}
+for (perc in 1:nrow(perc_rdp)){
+  if(perc == 1){
+    next()
+  } else {
+    for (r in 1:nrow(rdprrndbsra_clean)){
+      if(
+        rdprrndbsra_clean[r, "rdp_ngs"] >= perc_rdp[perc-1, "value"] & 
+        rdprrndbsra_clean[r, "rdp_ngs"] <= perc_rdp[perc, "value"]
+      ){
+        
+        rdprrndbsra_clean[r, "perc_rdp"] <- perc_rdp[perc-1, "percentile"]
+      }
+    }
+  }
+}
+```
+
+###### Adding a percentile for hits on sra and RDP (contd.)
+
+The percentiles were converted to integers, with the intention to be used in the plot.
+
+```{r}
+rdprrndbsra_clean$perc_rdp <- as.numeric(gsub("%", "", rdprrndbsra_clean$perc_rdp))
+rdprrndbsra_clean$perc_sra <-  as.numeric(gsub("%", "", rdprrndbsra_clean$perc_sra))
+```
+
+###### Creating a plot
+
+Labels only for organisms that exist within the desired rectangle are shown. The code below must be done before the process of making the plot to achieve this goal.
+
+```{r}
+sraminhits <- 5
+sramaxhits <- 35
+rdpmin <- 40
+rdpmax <- 60
+
+rdprrndbsra_clean$rectlabel <- ifelse(
+  rdprrndbsra_clean$sra_n_gs >= sraminhits & 
+  rdprrndbsra_clean$sra_n_gs <= sramaxhits &
+  rdprrndbsra_clean$perc_rdp >= rdpmin &
+  rdprrndbsra_clean$perc_rdp <= rdpmax, 
+  rdprrndbsra_clean$gs , "")
+```
+
+###### Creating a plot (contd.)
+
+The main consituents of the plot were made and assigned to a value, with the purpose of being used with either dark or white backgrounds. The plot consisted of sraHits on the x-axis and the percentile hits on RDP on the y-axis.
+
+```{r}
+q <- ggplot(rdprrndbsra_clean, aes(x=sra_n_gs, y=perc_rdp, label=rectlabel)) +
+       scale_x_log10() +
+         labs(x="sraHits",
+              y="rdp",
+              title="Count of organisms that are present in sraHits, RDP and rrndb") +
+         annotate("rect", xmin = 2, xmax = 25, ymin = 40, ymax = 60,
+                  alpha = .2)
+```
+
+###### Creating a plot (contd.)
+
+The plot constructed was done so with the intended background to be light.
+
+```{r}
+(qlight <- q +
+          geom_point() +
+          geom_label_repel()+
+          theme(axis.line.x = element_line(colour="black", size=1),
+                axis.line.y = element_line(colour="black", size=1),
+                panel.background=element_rect(fill="transparent"),
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_blank()))
+```
+
+###### Creating a plot (contd.)
+
+The plot constructed was done so with the intended background to be dark.
+
+```{r}
+qdark <- q + 
+    geom_point(color="white", size=2) + 
+    theme(text = element_text(colour = "white"),
+          rect = element_rect(fill = ""),
+                    axis.text = element_text(colour = "white"),
+                    axis.ticks = element_line(colour = "white"),
+                    axis.line.x = element_line(colour="white", size=1),
+                    axis.line.y = element_line(colour="white", size=1),
+                    panel.background=element_rect(fill="transparent"),
+              plot.background = element_rect(fill = "transparent",colour = NA),
+          panel.grid.minor = element_blank(),
+                    panel.grid.major = element_blank()) +
+    scale_color_manual(values = c("white")) +
+  geom_label_repel(segment.colour = "white", color="white", fill="transparent") 
+```
+
+###### Exporting the plot
+
+```{r}
+pdf(file = "~/Desktop/rdp_light.pdf", width = 7, height = 4)
+print(qlight)
+dev.off()
+ggsave(qlight, filename = "~/Desktop/rdp_light.pdf",  bg = "transparent")
+ggsave(qdark, filename = "~/Desktop/rdp_dark.png",  bg = "transparent",width = 7, height = 4.5)
+```
