@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e 
 OUTPUT_DIR=$1
 ORGANISM=$2
 
@@ -8,21 +8,24 @@ ORGANISM=$2
 
 if [ -z "$OUTPUT_DIR" ]
   then
-echo "Directory exists"
+    echo "Error: Directory exists!"
+    exit 1
   else
-echo "Creating directory"
+    echo "Creating directory"
   mkdir $OUTPUT_DIR
 fi
 
 
-grep "${ORGANISM}" /Users/alexandranolan/Desktop/16scandidate/scripts/srapure > ${OUTPUT_DIR}/srafind 
+grep "${ORGANISM}" ./srapure > ${OUTPUT_DIR}/srafind 
 
+# I have no idea why this wont work in a while loop but does runniong a list of cmds
 
 while read sra gs 
   do 
     echo "fastq-dump --split-files $sra -O ${OUTPUT_DIR}" >> ${OUTPUT_DIR}/runcmds
-    fastq-dump --split-files "$sra" -O ${OUTPUT_DIR}
+    #fastq-dump --split-files "$sra" -O ${OUTPUT_DIR}
 done < ${OUTPUT_DIR}/srafind
+bash ${OUTPUT_DIR}/runcmds
 
 exit
 
