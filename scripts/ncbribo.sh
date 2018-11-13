@@ -1,9 +1,10 @@
 #!/bin/bash
 
 OUTPUT_DIR=$1
+ORGANISM=$2
 
-#Download reads for a specific organism from NCBI based on results of ggrrndbsra.R
-#INPUT_FILE containing accessions obtained from ggrrndbsra.R result for chosen organism.
+#Download reads for a specific organism from NCBI based on results of .R
+#INPUT_FILE containing accessions obtained from ggrrndbsra.R result for chosen organism
 
 if [ -z "$OUTPUT_DIR" ]
   then
@@ -14,14 +15,14 @@ echo "Creating directory"
 fi
 
 
-grep "Pediococcus acidilactici" /Users/alexandranolan/Desktop/16scandidate/srafind/srapure >$OUTPUT_DIR/srafind 
+grep "${ORGANISM}" /Users/alexandranolan/Desktop/16scandidate/srafind/srapure > ${OUTPUT_DIR}/srafind 
+
 
 while read sra gs 
-  do echo $sra
-    cat /Users/alexandranolan/Desktop/16scandidate/srafind/srapure | grep -A 1 ">$sra$"
-    fastq-dump --split-files $sra  > $OUTPUT_DIR/sra.fastq 
-done < $OUTPUT_DIR/srafind 
-
+  do 
+    echo "fastq-dump --split-files $sra -O ${OUTPUT_DIR}" >> ${OUTPUT_DIR}/runcmds
+    fastq-dump --split-files "$sra" -O ${OUTPUT_DIR}
+done < ${OUTPUT_DIR}/srafind
 
 exit
 
