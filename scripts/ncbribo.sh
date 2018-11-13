@@ -15,7 +15,7 @@ echo "Creating directory"
 fi
 
 
-grep "${ORGANISM}" /Users/alexandranolan/Desktop/16scandidate/srafind/srapure > ${OUTPUT_DIR}/srafind 
+grep "${ORGANISM}" /Users/alexandranolan/Desktop/16scandidate/scripts/srapure > ${OUTPUT_DIR}/srafind 
 
 
 while read sra gs 
