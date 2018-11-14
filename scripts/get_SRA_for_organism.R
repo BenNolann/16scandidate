@@ -32,11 +32,24 @@ system(paste0("grep '", ORGANISM, "' srapure > ", filtered_sra_results))
 lines <- readLines(filtered_sra_results)
 read_set <- 1
 for (line in lines){
-  SUBOUTPUT_DIR <- file.path(OUTPUT_DIR, read_set)
+  dir.create(file.path(OUTPUT_DIR, read_set))
+  SUBOUTPUT_DIR_RAW <- file.path(OUTPUT_DIR, read_set, "raw")
+  SUBOUTPUT_DIR_DOWN <- file.path(OUTPUT_DIR, read_set, "downsampled")
   linesplit <- gsub("\"", "", line, fixed=T)
   linesplit <- strsplit(linesplit, "\t")[[1]]
-  cmd <- paste0("fastq-dump --split-files ", linesplit[1], " -O ", SUBOUTPUT_DIR)
+  dir.create(SUBOUTPUT_DIR_RAW)
+  dir.create(SUBOUTPUT_DIR_DOWN)
+  cmd <- paste0("fastq-dump --split-files ", linesplit[1], " -O ", SUBOUTPUT_DIR_RAW)
   print(cmd)
   system(cmd)
+  read_number <- 1
+  for (file in dir(SUBOUTPUT_DIR_RAW)){
+    downcmd <- paste0("seqtk sample -s100 ", file, "1000000 > ", 
+                      file.path(SUBOUTPUT_DIR_DOWN, "reads"), read_number, ".fq")
+    read_number = read_number + 1
+  }
+  # downsample reads to 1,000,000
+
+  
   read_set <- read_set + 1
 }
