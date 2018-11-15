@@ -44,8 +44,11 @@ for (line in lines){
   system(cmd)
   read_number <- 1
   for (file in dir(SUBOUTPUT_DIR_RAW)){
-    downcmd <- paste0("seqtk sample -s100 ", file, "1000000 > ", 
+    downcmd <- paste0("seqtk sample -s100 ",
+                      file.path(SUBOUTPUT_DIR_RAW, file), " 1000000 > ", 
                       file.path(SUBOUTPUT_DIR_DOWN, "reads"), read_number, ".fq")
+     print(downcmd)
+     system(downcmd)
     read_number = read_number + 1
   }
   # downsample reads to 1,000,000
